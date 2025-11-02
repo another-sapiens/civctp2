@@ -327,7 +327,8 @@ Const : alsire {
 
 	Float  CaravanCoef                            aka CARAVAN_COEF
 	Float  DomesticTradeReduction   =    0.5      aka DOMESTIC_TRADE_COEF
-	Float  TradePactCoef            =    1.05     aka PACT_TRADE_COEF
+	Float  TradeCoef            	=    1.002    aka TRADE_COEF
+	Float  TradePactCoef            =    1.5      aka PACT_TRADE_COEF
 
 	Int    PollutionCausedByNuke                  aka POLLUTION_CAUSED_BY_NUKE
 
@@ -349,4 +350,5 @@ Const : alsire {
 	Float  BaseRoadPriorityVsThreatRank     = 0.5
 	Int    CosiderNumCitiesForSlaves        = 5
 	Float  SmallCityImproveCoeff            = 1.0
+	Int    FlashInMilSecs                   = 2000
 }
