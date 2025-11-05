@@ -1,73 +1,130 @@
 app-id: net.apolyton.civctp2
 runtime: org.freedesktop.Platform
-runtime-version: '23.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
-command: run-ctp
+command: flatpak-runner
 finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --socket=pulseaudio
   - --share=network
+  - --device=dri
 
 modules:
   - name: byacc
+    buildsystem: simple
+    build-commands:
+      # Extract .deb
+      - "ar x byacc.deb data.tar.xz"
+      # Extract only the binary.
+      - "tar -xf data.tar.xz ./usr/bin/byacc"
+      # Install the binary 
+      - "install -D -m755 ./usr/bin/byacc /app/bin/byacc"
+    sources:
+      - type: file
+        dest-filename: byacc.deb
+        url: http://ftp.debian.org/debian/pool/main/b/byacc/byacc_2.0.20241231-1_amd64.deb
+        sha256: 9e03198af0a5913cb91d7c49662ffe6e9e0c99f0cc7d779c7efcb55e7b1cdaad
+        size: 126072
+        
+  - name: ffmpeg
     buildsystem: autotools
     config-opts:
-      - --prefix=/app
-    sources:
-      - type: git
-        url: https://github.com/grandseiken/byacc.git
-    build-commands:
-      - ./configure --prefix=/app
-      - make
-      - make install
-      - mv /app/bin/yacc /app/bin/byacc
-    build-options:
-        env:
-            PATH: /app/bin:/usr/bin:/bin
-  - name: flex
-    buildsystem: autotools
+      # We build a minimal FFmpeg with only the needed libs
+      - --disable-everything
+      # Disable assembly so compile succeeds
+      - --disable-asm
+          
+      # To read the .avi and .ogg movies/tracks
+      - --enable-protocol=file
+      - --enable-demuxer=avi
+      - --enable-demuxer=ogg
+      
+      # Audio/Video Codecs -- ffprobe the .avi and .ogg files to check this
+      - --enable-decoder=indeo5
+      - --enable-decoder=pcm_s16le
+      - --enable-decoder=vorbis
+      
+      
+      - --enable-shared
+      - --disable-static
+      - --enable-avcodec
+      - --enable-avformat
+      - --enable-swscale
+      - --disable-doc
+      - --disable-programs
     sources:
       - type: archive
-        url: https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz
-        sha256: e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995
-    build-commands:
-      - ./configure --prefix=/app
-      - make
-      - make install
+        url: https://ffmpeg.org/releases/ffmpeg-4.4.4.tar.bz2
+        sha256: 47b1fbf70a2c090d9c0fae5910da11c6406ca92408bb69d8c935cd46c622c7ce
+        
+  # SDL image and mixer was removed from the SDK to trim it, so we must compile it ourselves
+  - name: SDL2_image
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.8.2.tar.gz
+        sha256: 8f486bbfbcf8464dd58c9e5d93394ab0255ce68b51c5a966a918244820a76ddc
+  - name: SDL2_mixer
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://www.libsdl.org/projects/SDL_mixer/release/SDL2_mixer-2.8.0.tar.gz
+        sha256: 1cfb34c87b26dbdbc7afd68c4f545c0116ab5f90bbfecc5aebe2a9cb4bb31549
+        
   - name: civctp2
     buildsystem: autotools
     sources:
-      - type: dir
-        path: ./
+      - type: git
+        url: https://github.com/civctp2/civctp2.git
+        branch: master
     build-options:
-      cflags: "-O3 -fuse-ld=gold"
-      cxxflags: "-fpermissive -O3 -fuse-ld=gold"
+      # Use gnu89 for compatibility
+      cflags: "-std=gnu89"
+      cxxflags: "-std=gnu89 -fpermissive -O3"
+      env:
+        # Ensure the ffmpeg we compiled is used instead of the SDK's
+        PKG_CONFIG_PATH: "/app/lib/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
     config-opts:
       - --enable-silent-rules
+      # Specify build type (or face freetype errors)
+      - --build=x86_64-pc-linux-gnu
   - name: game-data
     buildsystem: simple
     sources:
       - type: dir
-        path: ./
+        path: ctp2_data
+        dest: ctp2_data
+      - type: dir
+        path: ctp2_program
+        dest: ctp2_program
+      - type: dir
+        path: Scenarios
+        dest: Scenarios
+      - type: script
+        dest-filename: flatpak-runner
+        commands:
+          - "cd /app/game/ctp2_code/ctp/"
+          - "./ctp2 -fullscreen"
     build-commands:
-      - echo "Running additional setup..."
-      - echo "Copying game data to app"
+      # Additional setup. This needs a copy of the game.
+      
+      - install -d /app/game /app/game/ctp2_code/ctp/dll/map/
+      
       # Copy game data to app
-      - mkdir /app/game && cp -r ctp2_code ctp2_data ctp2_program help Scenarios Advance-Graph ModTools /app/game/
-      # Copy music and saves to game directory
-      - cp -r /app/game/ctp2_program/ctp/music /app/game/ctp2_code/ctp/
-      - cp -r /app/game/ctp2_program/ctp/save /app/game/ctp2_code/ctp/
+      - cp -a ctp2_data Scenarios /app/game/
+      
+      # Install music, saves, and other data
+      - cp -a ctp2_program/ctp/* /app/game/ctp2_code/ctp/
 
       # Copy executable to game directory
-      - cp /app/bin/ctp2 /app/game/ctp2_code/ctp/
-      # Copy missing libraries
-      - mkdir /app/game/ctp2_code/ctp/dll/map/ && cp /app/lib/ctp2/*.so /app/game/ctp2_code/ctp/dll/map/
-  - name: runner
-    buildsystem: simple
-    build-commands:
-      - install -Dm755 flatpak-runner.sh /app/bin/run-ctp
-    sources:
-      - type: file
-        path: tools/flatpak-runner.sh
+      - install -m755 /app/bin/ctp2 /app/game/ctp2_code/ctp/
+      # Copy missing .so libraries
+      - install -m644 -t /app/game/ctp2_code/ctp/dll/map/ /app/lib/ctp2/*.so
+      # Install shell wrapper to run the game
+      - install -Dm755 flatpak-runner /app/bin/flatpak-runner
